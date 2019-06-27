@@ -422,10 +422,14 @@ func (ctrl *csiSnapshotController) checkandBindSnapshotContent(snapshot *crdv1.V
 }
 
 func (ctrl *csiSnapshotController) checkandUpdateBoundSnapshotStatusOperation(snapshot *crdv1.VolumeSnapshot, content *crdv1.VolumeSnapshotContent) (*crdv1.VolumeSnapshot, error) {
-	status, _, size, err := ctrl.handler.GetSnapshotStatus(content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check snapshot status %s with error %v", snapshot.Name, err)
-	}
+	/*
+		status, _, size, err := ctrl.handler.GetSnapshotStatus(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check snapshot status %s with error %v", snapshot.Name, err)
+		}
+	*/
+	status := &csi.SnapshotStatus{Type: csi.SnapshotStatus_READY}
+	size := int64(0)
 	timestamp := time.Now().UnixNano()
 	newSnapshot, err := ctrl.updateSnapshotStatus(snapshot, status, timestamp, size, IsSnapshotBound(snapshot, content))
 	if err != nil {
