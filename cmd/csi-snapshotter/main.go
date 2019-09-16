@@ -52,6 +52,10 @@ const (
 
 	// Default timeout of short CSI calls like GetPluginInfo
 	defaultCSITimeout = time.Minute
+
+	// leader election type supported in k8s 1.13
+	leaderElectionTypeConfigMaps = "configmaps"
+	leaderElectionTypeLeases     = "leases"
 )
 
 // Command line flags
@@ -68,14 +72,20 @@ var (
 	showVersion                     = flag.Bool("version", false, "Show version.")
 	csiTimeout                      = flag.Duration("timeout", defaultCSITimeout, "The timeout for any RPCs to the CSI driver. Default is 1 minute.")
 
-	leaderElection          = flag.Bool("leader-election", false, "Enables leader election.")
+	leaderElectionEnabled   = flag.Bool("leader-election", false, "Enables leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "The namespace where the leader election resource exists. Defaults to the pod namespace if not set.")
+	leaderElectionType      = flag.String("leader-election-type", leaderElectionTypeLeases, "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
 )
 
 var (
 	version                = "unknown"
 	leaderElectionLockName = "external-snapshotter-leader-election"
 )
+
+type leaderElection interface {
+	Run() error
+	WithNamespace(namespace string)
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -211,10 +221,24 @@ func main() {
 		close(stopCh)
 	}
 
-	if !*leaderElection {
+	if !*leaderElectionEnabled {
 		run(context.TODO())
 	} else {
-		le := leaderelection.NewLeaderElection(kubeClient, leaderElectionLockName, run)
+		var le leaderElection
+
+		switch *leaderElectionType {
+		case leaderElectionTypeConfigMaps:
+			klog.Warningf("The '%s' leader election type is deprecated and will be removed in a future release. Use '--leader-election-type=%s' instead for k8s 1.14+.", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
+			le = leaderelection.NewLeaderElectionWithConfigMaps(kubeClient, leaderElectionLockName, run)
+
+		case leaderElectionTypeLeases:
+			le = leaderelection.NewLeaderElection(kubeClient, leaderElectionLockName, run)
+
+		default:
+			klog.Errorf("--leader-election-type must be either '%s' or '%s'", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
+			os.Exit(1)
+		}
+
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)
 		}
